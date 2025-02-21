@@ -7,6 +7,7 @@ Main goals:
 - [ ] 1. Apply Kalman-Filtering approach
 - [ ] 2. Build our Kernel on a sphere that takes the spherical polar coordinates as input (theta, phi)
 - [ ] 3. Detrend the seasonal data
+
 Lower priority:
 - [ ] 4. Plotting the distribution of hyperparams after training on split data sets (i.e. split the full training datasets into yearly data, and examine if there is a pattern for the hyperparams.)
 - [ ] 5. Adding in wind velocity (weather deviations tend to propagate along the direction of the wind)
