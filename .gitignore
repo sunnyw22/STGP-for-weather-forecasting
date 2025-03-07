@@ -17,5 +17,7 @@ conda/
 bin/
 plots/
 run/
+submit/
+saved_models/
 
 .vscode/launch.json
