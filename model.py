@@ -17,6 +17,8 @@ class ExactMarkovGaussianProcess(MarkovGaussianProcess):
         MarkovGP model with a spatiotemporal kernel.
 
         Args:
+            kernel (Kernel): spatiotemporal kernel.
+            likelihood (Likelihood): likelihood function.
             X (ndarray): (n_temporal,) array of temporal inputs.
             R (ndarray): (n_temporal, n_spatial, N_dim) array of spatial inputs.
             Y (ndarray): (n_temporal, n_spatial) array of observations.
