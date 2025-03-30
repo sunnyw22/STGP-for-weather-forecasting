@@ -2,9 +2,9 @@
 
 import torch
 import numpy as np
-from utils import latlon_to_cartesian
+from .utils import latlon_to_cartesian
 
-def create_data(device, data_train, data_test, lead_time, space_subsample=1, time_subsample=1, train=True):
+def create_data(data_train, data_test, lead_time, space_subsample=1, time_subsample=1, train=True):
     """Preparing input and output data. X should be the coordinate input into the kernel, 
     while Y should be the forecast target (shifted lead time)."""
 
@@ -21,18 +21,18 @@ def create_data(device, data_train, data_test, lead_time, space_subsample=1, tim
                     lon=slice(0, None, space_subsample)) 
 
     X_time = (X.time - data_train.time[0]).values / np.timedelta64(1, 'h')
-    X_time = torch.tensor(X_time).to(device)
+    X_time = torch.tensor(X_time)
     t_steps = X_time.shape[0]
 
     latitudes = X.lat.values 
     longitudes = X.lon.values 
-    cartesian_coords = latlon_to_cartesian(latitudes, longitudes, device)
+    cartesian_coords = torch.tensor(latlon_to_cartesian(latitudes, longitudes))
     nlat, nlon, _ = cartesian_coords.shape
 
     if train:
         print("Processing Training Dataset")
         # Combine spatial and temporal data
-        training_coords = torch.empty((t_steps, nlat, nlon, 4)).to(device)
+        training_coords = torch.empty((t_steps, nlat, nlon, 4))
         # Fill in the spatial part first
         training_coords[..., :3] = cartesian_coords.unsqueeze(0).expand(t_steps, -1, -1, -1)
         # The final element is time
@@ -41,10 +41,10 @@ def create_data(device, data_train, data_test, lead_time, space_subsample=1, tim
         print(f"Combined coords info --> Shape: {training_coords.shape}, Mem: {X_size:.2f} MB")
 
         if lead_time == 0:
-            Y = torch.tensor(X.values).view(-1).to(device)
+            Y = torch.tensor(X.values).view(-1)
         else:
             # Flatten to shape (N,)
-            Y = torch.tensor(Y.values).view(-1).to(device)
+            Y = torch.tensor(Y.values).view(-1)
             Y_size = Y.element_size() * Y.nelement() / (1024**2)
             print(f"Target info --> Shape: {Y.shape}, Mem: {Y_size:.2f} MB")
 
@@ -64,12 +64,12 @@ def create_data(device, data_train, data_test, lead_time, space_subsample=1, tim
                         lat=slice(0, None, space_subsample),
                         lon=slice(0, None, space_subsample))
         X_test_time = (X_test.time - data_train.time[0]).values / np.timedelta64(1, 'h')
-        X_test_time = torch.tensor(X_test_time).to(device)
+        X_test_time = torch.tensor(X_test_time)
         test_t_steps = X_test_time.shape[0]
 
         print("Processing Test Dataset")
         # Combine spatial and temporal data
-        testing_coords = torch.empty((test_t_steps, nlat, nlon, 4)).to(device)
+        testing_coords = torch.empty((test_t_steps, nlat, nlon, 4))
         # Fill in the spatial part first
         testing_coords[..., :3] = cartesian_coords.unsqueeze(0).expand(test_t_steps, -1, -1, -1)
         # The final element is time
@@ -78,10 +78,10 @@ def create_data(device, data_train, data_test, lead_time, space_subsample=1, tim
         print(f"Combined coords info --> Shape: {testing_coords.shape}, Mem: {X_size:.2f} MB")
 
         if lead_time == 0:
-            Y_test = torch.tensor(X_test.values).view(-1).to(device)
+            Y_test = torch.tensor(X_test.values).view(-1)
         else:
             # Flatten to shape (N,)
-            Y_test = torch.tensor(Y_test.values).view(-1).to(device)
+            Y_test = torch.tensor(Y_test.values).view(-1)
             Y_size = Y_test.element_size() * Y_test.nelement() / (1024**2)
             print(f"Target info --> Shape: {Y_test.shape}, Mem: {Y_size:.2f} MB")
 
