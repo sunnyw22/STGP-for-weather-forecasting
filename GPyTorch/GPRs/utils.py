@@ -35,8 +35,8 @@ def freq_spectrum(val, plot=True, no_peaks=5, fs=1.0):
     freqs, power = periodogram(val, fs=fs)
     peaks, _ = find_peaks(power, height=1, distance=1)
 
-    # Sort the peaks by their power (descending order), then pick three peaks
-    # There might be a peak with period as half the data time
+    # Sort the peaks by their power (descending order), then pick x peaks
+    # There might be a peak with period as half the data time?
     sorted_peak_indices = np.argsort(power[peaks])[::-1]
     top_peaks = peaks[sorted_peak_indices[:no_peaks]]
 
@@ -46,7 +46,7 @@ def freq_spectrum(val, plot=True, no_peaks=5, fs=1.0):
     for f, p in zip(peak_freqs, peak_powers):
         print(f"Peak at frequency = {f:.5f} cycles/hour (corresponding period = {1/f:.2f} hrs = {1/f/24:.2f} days = {1/f/(24*30):.2f} months), power = {p/1e5 :.5f} * 1e5")
     
-    if plot==True:
+    if plot:
         plt.figure(figsize=(8, 4))
         plt.plot(freqs, power)
         plt.xlim(0, 0.005)
@@ -62,3 +62,103 @@ def freq_spectrum(val, plot=True, no_peaks=5, fs=1.0):
     else:
         print("No peaks found")
         return None
+    
+def splitting_data(data, var, plot=False):
+    """Splitting up the weather data into smaller grids based on mean trends.
+        Input data with (Time, Lat, Lon) shape then return indices to slice."""
+    
+    if not isinstance(var, str):
+        var = str(var)
+
+    if var not in ['z', 't2m']:
+        raise ValueError("Variable must be either 't2m' or 'z'.")
+    
+    avg_time = data[var].mean(dim=["lat", "lon"])
+    avg_lat = data[var].mean(dim=["time", "lon"])
+    avg_lon = data[var].mean(dim=["time", "lat"])
+
+    # Find peaks and troughs
+    peaks_lat, _ = find_peaks(avg_lat.values, distance=5)
+    troughs_lat, _ = find_peaks(-avg_lat.values, distance=5)
+    peaks_lon, _ = find_peaks(avg_lon.values, distance=5)
+    troughs_lon, _ = find_peaks(-avg_lon.values, distance=5)
+    print("Peaks (lat indices):", peaks_lat, "Troughs (lat indices):", troughs_lat)
+    print("Peaks (lon indices):", peaks_lon, "Troughs (lon indices):", troughs_lon)
+
+    if plot:
+        fig, axs = plt.subplots(nrows=1, ncols=3, figsize=(18, 5))
+
+        avg_time.plot(ax=axs[0])
+        axs[0].set_title("Average Geopotential vs Time")
+        axs[0].set_xlabel("Time")
+        axs[0].set_ylabel("Geopotential")
+        avg_lat.plot(ax=axs[1])
+        axs[1].set_title("Average Geopotential vs Latitude")
+        axs[1].set_xlabel("Latitude")
+        axs[1].set_ylabel("Geopotential")
+        avg_lon.plot(ax=axs[2])
+        axs[2].set_title("Average Geopotential vs Longitude")
+        axs[2].set_xlabel("Longitude")
+        axs[2].set_ylabel("Geopotential")
+
+        # Overlay crosses for latitude peaks and troughs
+        lat_coords = avg_lat.coords['lat'].values  # coordinate values for latitude
+        axs[1].plot(lat_coords[peaks_lat], avg_lat.values[peaks_lat], 'rx', markersize=10, label="Peaks")
+        axs[1].plot(lat_coords[troughs_lat], avg_lat.values[troughs_lat], 'kx', markersize=10, label="Troughs")
+        axs[1].legend()
+        # Overlay crosses for longitude peaks and troughs
+        lon_coords = avg_lon.coords['lon'].values  # coordinate values for longitude
+        axs[2].plot(lon_coords[peaks_lon], avg_lon.values[peaks_lon], 'rx', markersize=10, label="Peaks")
+        axs[2].plot(lon_coords[troughs_lon], avg_lon.values[troughs_lon], 'kx', markersize=10, label="Troughs")
+        axs[2].legend()
+
+        plt.tight_layout()
+        plt.show()
+
+    lat_boundaries = np.unique(np.r_[0, peaks_lat, troughs_lat, data.lat.size])
+    lon_boundaries = np.unique(np.r_[0, peaks_lon, troughs_lon, data.lon.size])
+
+    return lat_boundaries, lon_boundaries
+
+def extreme_points_rel_err(relative_error_mean):
+    """Retriving the points with max/min/best(closest to zero) on relative error"""
+
+    max_idx = np.argmax(relative_error_mean)
+    min_idx = np.argmin(relative_error_mean)
+    best_idx = np.argmin(np.abs(relative_error_mean))
+
+    flat_max_idx = np.unravel_index(max_idx, relative_error_mean.shape)
+    flat_min_idx = np.unravel_index(min_idx, relative_error_mean.shape)
+    flat_best_idx = np.unravel_index(best_idx, relative_error_mean.shape)
+
+    max_err = relative_error_mean[flat_max_idx[0],flat_max_idx[1]]
+    min_err = relative_error_mean[flat_min_idx[0],flat_min_idx[1]]
+    best_err = relative_error_mean[flat_best_idx[0],flat_best_idx[1]]
+
+    print(f"Highest relative error: ({int(flat_max_idx[0])},{int(flat_max_idx[1])}), with relative error in percentage: {max_err:.3f}")
+    print(f"Lowest relative error: ({int(flat_min_idx[0])},{int(flat_min_idx[1])}), with relative error in percentage: {min_err:.3f}")
+    print(f"Smallest relative error: ({int(flat_best_idx[0])},{int(flat_best_idx[1])}), with relative error in percentage: {best_err:.3f}")
+
+    idx = [max_idx, min_idx, best_idx]
+    val = [max_err, min_err, best_err]
+
+    return idx, val
+
+def extreme_points_rmse(rmse_error_mean):
+    # Best and worst location based on rmse
+    rmse_max_idx = np.argmax(rmse_error_mean)
+    rmse_min_idx = np.argmin(rmse_error_mean)
+
+    flat_rmse_max_idx = np.unravel_index(rmse_max_idx, rmse_error_mean.shape)
+    flat_rmse_min_idx = np.unravel_index(rmse_min_idx, rmse_error_mean.shape)
+
+    rmse_max_err = rmse_error_mean[flat_rmse_max_idx[0],flat_rmse_max_idx[1]]
+    rmse_min_err = rmse_error_mean[flat_rmse_min_idx[0],flat_rmse_min_idx[1]]
+
+    print(f"Highest RMSE: ({int(flat_rmse_max_idx[0])},{int(flat_rmse_max_idx[1])}), with value: {rmse_max_err:.3f}")
+    print(f"Lowest RMSE: ({int(flat_rmse_min_idx[0])},{int(flat_rmse_min_idx[1])}), with value: {rmse_min_err:.3f}")
+
+    idx = [rmse_max_idx, rmse_min_idx]
+    val = [rmse_max_err, rmse_min_err]
+
+    return idx, val
