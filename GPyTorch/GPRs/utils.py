@@ -221,3 +221,26 @@ def seasonal_decompose_grid(data, dom_period, model='additive'):
         })
     
     return detrend
+
+def extrapolate_seasonal(detrend, forecast_steps):
+    """Extrapolate a seasonal component by repeating its cycle."""
+
+    T = detrend.time.shape[0]
+    n_cycles = int(np.ceil(forecast_steps / T))
+    forecast_full = np.tile(detrend.seasonal.values, (n_cycles, 1, 1))
+    forecast = forecast_full[:forecast_steps, :, :]
+
+    last_time = pd.to_datetime(detrend.time.values[-1])
+    new_times = pd.date_range(start=last_time + pd.Timedelta(hours=1), periods=forecast_steps, freq='h')
+
+    seasonal_forecast = xr.DataArray(
+        forecast,
+        dims=["time", "lat", "lon"],
+        coords={
+            "time": new_times,
+            "lat": detrend.lat.values,
+            "lon": detrend.lon.values
+        }
+    )
+
+    return seasonal_forecast
