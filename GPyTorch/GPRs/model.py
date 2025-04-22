@@ -1,6 +1,7 @@
 """GP Model (exact and stochastic variational approach) with GPyTorch implementation."""
 
 import gpytorch
+from .mean import latlonmean, MLPmean
 from gpytorch.models import ApproximateGP
 from gpytorch.variational import CholeskyVariationalDistribution, VariationalStrategy
 
@@ -25,14 +26,17 @@ class ExactGP(gpytorch.models.ExactGP):
     """
     def __init__(self, train_x, train_y, likelihood, kernel):
         super(ExactGP, self).__init__(train_x, train_y, likelihood)
-        self.mean_module = gpytorch.means.ConstantMean() 
+        #self.mean_module = gpytorch.means.ConstantMean() 
+        #self.mean_module = gpytorch.means.LinearMean()
+        self.mean_module =  latlonmean()
+        #self.mean_module =  MLPmean()
         self.covar_module = kernel
 
     def forward(self, x):
         mean_x = self.mean_module(x)
         covar_x = self.covar_module(x)
         return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
-    
+
 class VarGP(ApproximateGP):
     """Stochastic Variational GP Regression Model from GPyTorch.
     We use inducing points with Cholesky Variational Distribution (other strategies 

@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 
 def latlon_to_cartesian(lat, lon):
     """ Converting (lat., lon.) to cartesian coordinates on a unit sphere
-        Note: WeatherBench data is defined on a constant altitude """
+        Note: WeatherBench data is defined on a constant altitude"""
 
     lat, lon = np.deg2rad(lat), np.deg2rad(lon)
 
@@ -33,13 +33,13 @@ def cartesian_to_latlon(xyz):
     latlon = np.stack([lat_deg, lon_deg], axis=-1)
     return latlon
 
-def freq_spectrum(val, plot=True, no_peaks=5, fs=1.0):
+def freq_spectrum(val, no_peaks=5, fs=1., plot=True):
     """fs is the frequency of the sample in hours"""
     freqs, power = periodogram(val, fs=fs)
     peaks, _ = find_peaks(power, height=1, distance=1)
 
     # Sort the peaks by their power (descending order), then pick x peaks
-    # There might be a peak with period as half the data time?
+    # Beware of periods larger than half of the total data time window 
     sorted_peak_indices = np.argsort(power[peaks])[::-1]
     top_peaks = peaks[sorted_peak_indices[:no_peaks]]
 
@@ -124,7 +124,9 @@ def splitting_data(data, var, plot=False):
     return lat_boundaries, lon_boundaries
 
 def extreme_points_rel_err(relative_error_mean):
-    """Retriving the points with max/min/best(closest to zero) on relative error"""
+    """Retriving the points with max/min/best(closest to zero) on relative error
+       Here assumes the input shape: (ntime*nlat*nlon, space) where space can be 
+       4 (x,y,z,t) or 3 (theta, phi, t)"""
 
     max_idx = np.argmax(relative_error_mean)
     min_idx = np.argmin(relative_error_mean)
@@ -148,7 +150,10 @@ def extreme_points_rel_err(relative_error_mean):
     return idx, val
 
 def extreme_points_rmse(rmse_error_mean):
-    # Best and worst location based on rmse
+    """Retriving the points with max/min RMSE
+       Here assumes the input shape: (ntime*nlat*nlon, space) where space can be 
+       4 (x,y,z,t) or 3 (theta, phi, t)."""
+
     rmse_max_idx = np.argmax(rmse_error_mean)
     rmse_min_idx = np.argmin(rmse_error_mean)
 
@@ -167,7 +172,7 @@ def extreme_points_rmse(rmse_error_mean):
     return idx, val
 
 def get_periods(data, fs=1):
-    """Gets the dominant period. Set fs=1 if data sampled hourly."""
+    """Gets the dominant period. Set fs=1 if data sampled hourly"""
     T = data.z.values.shape[0] # Currently works only on z500
 
     fft_vals = np.fft.rfft(data.z.values, axis=0)  
@@ -186,7 +191,13 @@ def get_periods(data, fs=1):
     return dom_period_da
 
 def seasonal_decompose_grid(data, dom_period, model='additive'):
-    """Perform seasonal_decompose across whole grid"""
+    """Perform seasonal decomposition across whole grid with statsmodel.seasonal_decompose
+       Note: statsmodel.seasonal_decompose splits data into trend + seasonal + residual. 
+       Here, we take the seasonal component as:
+            seasonal = seasonal_decompose.trend.mean + seasonal_decompose.seasonal
+       and the rest as residuals:
+            residuals = data - seasonal.
+       """
     if hasattr(data, 'values'):
         data_np = data.z.values
     else:
@@ -223,7 +234,7 @@ def seasonal_decompose_grid(data, dom_period, model='additive'):
     return detrend
 
 def extrapolate_seasonal(detrend, forecast_steps):
-    """Extrapolate a seasonal component by repeating its cycle."""
+    """Extrapolate a seasonal component by repeating its cycle (tiling)"""
 
     T = detrend.time.shape[0]
     n_cycles = int(np.ceil(forecast_steps / T))
