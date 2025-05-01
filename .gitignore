@@ -6,6 +6,8 @@ __pycache__
 *.log
 *.ckpt
 .coverage
+*.pdf
+*.png
 
 *_cache/
 data/
