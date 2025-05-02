@@ -9,6 +9,7 @@ __pycache__
 
 *_cache/
 data/
+junk/
 logs/
 tmp/
 env/

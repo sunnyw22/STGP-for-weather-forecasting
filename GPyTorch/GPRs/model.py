@@ -58,6 +58,7 @@ class VarGP(ApproximateGP):
         variational_strategy = VariationalStrategy(self, inducing_points, variational_distribution, learn_inducing_locations=True)
         super(VarGP, self).__init__(variational_strategy)
         self.mean_module = gpytorch.means.ConstantMean()
+        #self.mean_module = latlonmean()
         self.covar_module = kernel
 
     def forward(self, x):

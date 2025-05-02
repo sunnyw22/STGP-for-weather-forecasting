@@ -3,23 +3,19 @@
 import math
 import torch
 import gpytorch
-from gpytorch.kernels import Kernel, MaternKernel
-from gpytorch.functions import MaternCovariance
-from gpytorch.settings import trace_mode
+from gpytorch.kernels import Kernel
 
 class SphericalMaternKernel(Kernel):
     r"""
     Basically same as gpytorch matern kernel but uses covar_dist that accounts for 
     distances on a sphere.
 
-    This kernel computes distances on the sphere using the following approximation:
+    This kernel computes distances on the sphere using the Haversine formula:
 
-        ds^2 = d\theta^2 + \sin^2(\theta)d\phi^2
-        d = sqrt((delta_theta)^2 + (sin(theta_mean) * delta_phi)^2)
+        $$D(x,y) = 2 \text{arcsin} \left[ \sqrt{\sin^2((x_{\text{lat}}-y_{\text{lat}})/2)) 
+                                        + \cos(x_{\text{lat}})\cos(y_{\text{lat}})\sin^2((x_{\text{lon}}-y_{\text{lon}})/2))}\right]$$
 
-    where delta_theta = theta2 - theta1, delta_phi = phi2 - phi1, and
-    theta_mean is the average of theta1 and theta2. The kernel then uses these distances
-    in a Matern-like covariance function.
+    The kernel then uses these distances in a Matern-like covariance function.
 
     We assume input data shape = (ntime*nlat*nlon, 3) where 3 is (lat, lon, time).
     """
@@ -34,23 +30,30 @@ class SphericalMaternKernel(Kernel):
     def covar_dist(self, x1, x2, diag=False, **params):
         """
         Computes the pairwise spherical distances between x1 and x2.
-        Assumes x1 and x2 have already been sliced to only contain the active
-        dimensions (latitude and longitude) and that the angles are in degrees.
+        Assumes x1 and x2 are angles in degrees and have shape (N, 3) 
+        where 3 represents (lat, lon, time).
         """
 
-        lat1 = torch.deg2rad(x1[..., 0])
-        lon1 = torch.deg2rad(x1[..., 1])
-        lat2 = torch.deg2rad(x2[..., 0])
-        lon2 = torch.deg2rad(x2[..., 1])
+        lat1 = torch.deg2rad(x1[..., 0]) 
+        lon1 = torch.deg2rad(x1[..., 1]) 
+        lat2 = torch.deg2rad(x2[..., 0]) 
+        lon2 = torch.deg2rad(x2[..., 1]) 
         
         if diag:
             return torch.zeros(lat1.size(-1), device=lat1.device, dtype=lat1.dtype)
         
-        dlat = lat1.unsqueeze(1) - lat2.unsqueeze(0)  
-        dlon = lon1.unsqueeze(1) - lon2.unsqueeze(0)  
+        dlat = lat1.unsqueeze(1) - lat2.unsqueeze(0)  # shape: (N,N)
+        dlon = lon1.unsqueeze(1) - lon2.unsqueeze(0)  # shape: (N,N)
         
-        lat_mean = 0.5 * (lat1.unsqueeze(1) + lat2.unsqueeze(0))
-        distance = torch.sqrt(dlat**2 + (torch.sin(lat_mean) * dlon)**2)
+        hav_dlat = torch.sin(dlat/2)**2
+        hav_dlon = torch.sin(dlon/2)**2
+        cos_lat1 = torch.cos(lat1).unsqueeze(1) # (N,1)
+        cos_lat2 = torch.cos(lat2).unsqueeze(0) # (1,N)
+
+        # haversine formula
+        a = hav_dlat + cos_lat1 * cos_lat2 * hav_dlon # (N,N)
+        a = torch.clamp(a, min=0.0, max=1.0)
+        distance = 2 * torch.asin(torch.sqrt(a))
         return distance
 
     def forward(self, x1, x2, diag=False, **params):

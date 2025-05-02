@@ -197,6 +197,8 @@ def seasonal_decompose_grid(data, dom_period, model='additive'):
             seasonal = seasonal_decompose.trend.mean + seasonal_decompose.seasonal
        and the rest as residuals:
             residuals = data - seasonal.
+
+        TODO: speed up process without for loop
        """
     if hasattr(data, 'values'):
         data_np = data.z.values
@@ -237,7 +239,7 @@ def extrapolate_seasonal(detrend, forecast_steps):
     """Extrapolate a seasonal component by repeating its cycle (tiling)"""
 
     T = detrend.time.shape[0]
-    n_cycles = int(np.ceil(forecast_steps / T))
+    n_cycles = int(np.ceil(forecast_steps / T)) # Causes discontinuity in the signal and extrapolated signal. Needed smarter approaches
     forecast_full = np.tile(detrend.seasonal.values, (n_cycles, 1, 1))
     forecast = forecast_full[:forecast_steps, :, :]
 

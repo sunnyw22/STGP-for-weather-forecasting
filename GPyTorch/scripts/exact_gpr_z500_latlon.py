@@ -17,10 +17,127 @@ import torch
 import gpytorch
 
 # Import modules from your package
-from GPyTorch.GPRs.model import ExactGP
+from GPyTorch.GPRs.mean import latlonmean
+from GPyTorch.GPRs.kernel import SphericalMaternKernel
 from GPyTorch.GPRs.utils import splitting_data, extreme_points_rel_err, extreme_points_rmse
-from GPyTorch.GPRs.process_data import create_data
+from GPyTorch.GPRs.process_data import create_latlon_data
 from GPyTorch.GPRs.plot import *
+
+os.environ["CUDA_VISIBLE_DEVICES"]  = "4"
+
+
+def plot_modelparams(params, wrmse, spatial, time, show=False):
+    """Plots showing evolution of model params"""
+
+    df = pd.DataFrame(params)
+    epochs_range = np.arange(len(df))
+
+    # Create a figure with 3 rows and 2 columns of subplots
+    fig, axs = plt.subplots(nrows=3, ncols=2, figsize=(14, 12))
+
+    # --- Row 1 ---
+    # Left: Loss
+    axs[0, 0].plot(epochs_range, df["loss"], label=f'Weighted RMSE = {wrmse:.2f}', color='tab:blue')
+    axs[0, 0].set_title("Training Loss Over Epochs")
+    axs[0, 0].set_xlabel("Epoch")
+    axs[0, 0].set_ylabel("Negative Marginal Log Likelihood", color='tab:blue')
+    axs[0, 0].tick_params(axis='y', labelcolor='tab:blue')
+    axs[0, 0].legend()
+    axs[0, 0].text(
+        0.6215, 0.65, 
+        f"Train on 2017_12\nTest on 1-7/1/2018\nSubsampling: Rand",
+        transform=axs[0, 0].transAxes,  
+        fontsize=10,
+        bbox=dict(facecolor='white', alpha=0.8, boxstyle='round')
+    )
+    ax_rmse = axs[0, 0].twinx()
+    ax_rmse.plot(epochs_range, df["rmse"], color='tab:orange', label="RMSE")
+    ax_rmse.set_ylabel("RMSE", color='tab:orange')
+    ax_rmse.tick_params(axis='y', labelcolor='tab:orange')
+
+    # Right: Mean and Noise
+    axs[0, 1].plot(epochs_range, df["mean"], color='tab:blue', label="Mean")
+    axs[0, 1].set_title("GP Mean and Noise")
+    axs[0, 1].set_xlabel("Epoch")
+    axs[0, 1].set_ylabel("Mean", color='tab:blue')
+    axs[0, 1].tick_params(axis='y', labelcolor='tab:blue')
+    ax_noise = axs[0, 1].twinx()
+    ax_noise.plot(epochs_range, df["noise"], color='tab:orange', label="Noise")
+    ax_noise.set_ylabel("Noise", color='tab:orange')
+    ax_noise.tick_params(axis='y', labelcolor='tab:orange')
+
+    # --- Row 2 ---
+    # Left: Spatial lengthscales
+    axs[1, 0].plot(epochs_range, df["spatial_1_lengthscale"], label=f'Spatial 1 Length Scale ({spatial[0]})', color='tab:blue')
+    axs[1, 0].plot(epochs_range, df["spatial_2_lengthscale"], label=f'Spatial 2 Length Scale ({spatial[1]})', color='tab:orange')
+    axs[1, 0].plot(epochs_range, df["spatial_3_lengthscale"], label=f'Spatial 3 Length Scale ({spatial[2]})', color='tab:red')
+    axs[1, 0].set_title("Spatial Lengthscales")
+    axs[1, 0].set_xlabel("Epoch")
+    axs[1, 0].set_ylabel("Lengthscale")
+    axs[1, 0].legend()
+
+    # Right: Spatial outputscale
+    # axs[1, 1].plot(epochs_range, df["spatial_outputscale"], label='Output scale from ScaleKernel', color='tab:red')
+    axs[1, 1].plot(epochs_range, df["outputscale"], label='Output scale from ScaleKernel', color='tab:red')
+    axs[1, 1].set_title("Spatial Outputscale")
+    axs[1, 1].set_xlabel("Epoch")
+    axs[1, 1].set_ylabel("Outputscale")
+
+    # --- Row 3 ---
+    # Left: Temporal lengthscales
+    axs[2, 0].plot(epochs_range, df["time_period_1"], label=f'Period Length ({time[0]/24:.2f} days)', color='tab:blue')
+    #axs[2, 0].plot(epochs_range, df["time_period_2"], label=f'Period Length ({time[1]/24:.2f} days)', color='tab:red')
+    #axs[2, 0].plot(epochs_range, df["time_period_3"], label=f'Period Length ({time[2]/24:.2f} days)', color='tab:orange')
+    axs[2, 0].set_title("Temporal Period Lengths")
+    axs[2, 0].set_xlabel("Epoch")
+    axs[2, 0].set_ylabel("Lengthscale")
+    axs[2, 0].legend()
+
+    # Right: Temporal periods
+    axs[2, 1].plot(epochs_range, df["time_lengthscale_1"], label=f'Period Length ({time[0]/24:.2f} days)', color='tab:blue')
+    #axs[2, 1].plot(epochs_range, df["time_lengthscale_2"], label=f'Period Length ({time[1]/24:.2f} days)', color='tab:red')
+    #axs[2, 1].plot(epochs_range, df["time_lengthscale_3"], label=f'Period Length ({time[2]/24:.2f} days)', color='tab:orange')
+    axs[2, 1].plot(epochs_range, df["time_matern_lengthscale"], label='Matern Length Scale', color='tab:green')
+    axs[2, 1].set_title("Temporal Kernel Lengthscale")
+    axs[2, 1].set_xlabel("Epoch")
+    axs[2, 1].set_ylabel("Period")
+    axs[2, 1].legend()
+
+    plt.tight_layout()
+    plt.savefig("tmp/output.png")
+    if show:
+        plt.show()
+
+    return 
+
+class ExactGP(gpytorch.models.ExactGP):
+    """Exact GP Model from GPyTorch stores the training data.
+
+    Parameters
+    ----------
+    train_x : torch.Tensor
+        The training input data of shape (N, d), where N is the number of observations
+        and d is the dimensionality of the input (d=2 for (lat,lon), d=3 for (x,y,z)). 
+        If we have a grid of (lat, lon) points with ntime timesteps, we expect 
+        n=nlat*nlon*ntime. 
+    train_y : torch.Tensor
+        The training target values.
+    likelihood : gpytorch.likelihoods.Likelihood
+        The likelihood function to be used in the model (e.g., GaussianLikelihood).
+    kernel : gpytorch.kernels.Kernel
+        The covariance function (kernel).
+
+    TODO: Implement mean_module parametrised by lat, lon.
+    """
+    def __init__(self, train_x, train_y, likelihood, kernel):
+        super(ExactGP, self).__init__(train_x, train_y, likelihood)
+        self.mean_module =  latlonmean()
+        self.covar_module = kernel
+
+    def forward(self, x):
+        mean_x = self.mean_module(x)
+        covar_x = self.covar_module(x)
+        return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
 
 # Set default tensor type and device
 torch.set_default_dtype(torch.float64)
@@ -30,7 +147,7 @@ print(f"Using device: {device}")
 
 def train_gp(kernel, lead_time_h, data_train, data_test, space_subsample=1, time_subsample=1, frac=0.1, epochs=2500, save_model=False, device=device):
     """Train a Gaussian Process model using GPyTorch. Can add subsampling for efficiency."""
-    X_train, Y_train = create_data(data_train, data_test, lead_time_h, space_subsample=space_subsample, time_subsample=time_subsample)
+    X_train, Y_train = create_latlon_data(data_train, data_test, lead_time_h, space_subsample=space_subsample, time_subsample=time_subsample)
     X_train = X_train.to(device)
     Y_train = Y_train.to(device)
     
@@ -38,7 +155,8 @@ def train_gp(kernel, lead_time_h, data_train, data_test, space_subsample=1, time
     # N = X_train.shape[0] * X_train.shape[1] * X_train.shape[2] 
     # n_frac = int(frac * N) # Fraction of points to be chosen
     n_frac = 15000
-    X_train = X_train.view(-1, 4)
+    X_train = X_train.view(-1, 3)
+    Y_train = Y_train.view(-1) 
     indices = torch.randperm(X_train.size(0))[:n_frac]
     X_train = X_train[indices]
     Y_train = Y_train[indices]
@@ -81,10 +199,10 @@ def train_gp(kernel, lead_time_h, data_train, data_test, space_subsample=1, time
             "time_matern_lengthscale": temporal_kernel.kernels[0].lengthscale.item(),
             "time_lengthscale_1": temporal_kernel.kernels[1].lengthscale.item(),
             "time_period_1": temporal_kernel.kernels[1].period_length.item(),
-            "time_lengthscale_2": temporal_kernel.kernels[2].lengthscale.item(),
-            "time_period_2": temporal_kernel.kernels[2].period_length.item(),
-            "time_lengthscale_3": temporal_kernel.kernels[3].lengthscale.item(),
-            "time_period_3": temporal_kernel.kernels[3].period_length.item(),
+            #"time_lengthscale_2": temporal_kernel.kernels[2].lengthscale.item(),
+            #"time_period_2": temporal_kernel.kernels[2].period_length.item(),
+            #"time_lengthscale_3": temporal_kernel.kernels[3].lengthscale.item(),
+            #"time_period_3": temporal_kernel.kernels[3].period_length.item(),
         })
     current_allocated = torch.cuda.memory_allocated(device)
     max_allocated = torch.cuda.max_memory_allocated(device)
@@ -106,10 +224,10 @@ def train_gp(kernel, lead_time_h, data_train, data_test, space_subsample=1, time
 
 def predictions(model, likelihood, data_train, data_test, data_std, data_mean, lead_time, space_subsample, time_subsample):
     """Produce predictions after training."""
-    X_test, Y_test, lat, lon = create_data(data_train, data_test, lead_time, space_subsample=space_subsample, time_subsample=time_subsample, train=False)
+    X_test, Y_test, lat, lon = create_latlon_data(data_train, data_test, lead_time, space_subsample=space_subsample, time_subsample=time_subsample, train=False)
     X_test = X_test.to(device)
     Y_test = Y_test.to(device)
-    X_test = X_test.view(-1, 4)
+    X_test = X_test.view(-1, 3)
     nlat = len(lat)
     nlon = len(lon)
 
@@ -166,7 +284,7 @@ def main():
             lat_slice = slice(lat_bound[i], lat_bound[i+1])
             lon_slice = slice(lon_bound[j], lon_bound[j+1])
             
-            z500_train = z500.sel(time=slice('2017', '2017')).isel(lat=lat_slice, lon=lon_slice)['z']
+            z500_train = z500.sel(time=slice('2017.12', '2017.12')).isel(lat=lat_slice, lon=lon_slice)['z']
             z500_test = z500.sel(time=slice('2018', '2018.1.7')).isel(lat=lat_slice, lon=lon_slice)['z']
             
             data_mean = z500_train.mean().load()
@@ -177,28 +295,24 @@ def main():
 
             # Spatial kernel components
             spatial_lengths = [0.08, 0.25, 0.5]
-            matern_spatial_1 = gpytorch.kernels.MaternKernel(nu=1.5, active_dims=[0, 1, 2]).to(device)
+            matern_spatial_1 = SphericalMaternKernel(nu=1.5, active_dims=[0, 1]).to(device)
             matern_spatial_1.lengthscale = torch.tensor(spatial_lengths[0]).to(device)
-            matern_spatial_2 = gpytorch.kernels.MaternKernel(nu=1.5, active_dims=[0, 1, 2]).to(device)
+            matern_spatial_2 = SphericalMaternKernel(nu=1.5, active_dims=[0, 1]).to(device)
             matern_spatial_2.lengthscale = torch.tensor(spatial_lengths[1]).to(device)
-            matern_spatial_3 = gpytorch.kernels.MaternKernel(nu=1.5, active_dims=[0, 1, 2]).to(device)
+            matern_spatial_3 = SphericalMaternKernel(nu=1.5, active_dims=[0, 1]).to(device)
             matern_spatial_3.lengthscale = torch.tensor(spatial_lengths[2]).to(device)
 
             spatial_kernel = matern_spatial_1 + matern_spatial_2 + matern_spatial_3
 
             # Temporal kernel components
-            period_lengths = [24, 24*30*3, 24*30*12]
-            # period_lengths = [24]
-            time_kernel1 = gpytorch.kernels.PeriodicKernel(active_dims=[3]).to(device)  # Daily
+            #period_lengths = [24, 24*30*3, 24*30*12]
+            period_lengths = [24]
+            time_kernel1 = gpytorch.kernels.PeriodicKernel(active_dims=[2]).to(device)  # Daily
             time_kernel1.period_length = torch.tensor(period_lengths[0]).to(device)
-            time_kernel2 = gpytorch.kernels.PeriodicKernel(active_dims=[3]).to(device)
-            time_kernel2.period_length = torch.tensor(period_lengths[1]).to(device)
-            time_kernel3 = gpytorch.kernels.PeriodicKernel(active_dims=[3]).to(device)
-            time_kernel3.period_length = torch.tensor(period_lengths[2]).to(device)
-            matern_time_1 = gpytorch.kernels.MaternKernel(nu=1.5, active_dims=[3]).to(device)
+            matern_time_1 = gpytorch.kernels.MaternKernel(nu=1.5, active_dims=[2]).to(device)
 
-            time_kernel = matern_time_1 + time_kernel1 + time_kernel2 + time_kernel3
-            # time_kernel = matern_time_1 + time_kernel1 
+            # time_kernel = matern_time_1 + time_kernel1 + time_kernel2 + time_kernel3
+            time_kernel = matern_time_1 + time_kernel1 
             # Assemble the full kernel, wrapping scaling to the whole kernel
             kernel = gpytorch.kernels.ScaleKernel(spatial_kernel * time_kernel).to(device)
             
@@ -222,7 +336,7 @@ def main():
                 train_mean = pred_train.mean
                 train_std = pred_train.stddev
             
-            sorted_idx = torch.argsort(X_train[:, 3])
+            sorted_idx = torch.argsort(X_train[:, 2])
             train_mean = train_mean[sorted_idx].detach().cpu().numpy()
             train_std = train_std[sorted_idx].detach().cpu().numpy()
             Y_train_arr = Y_train[sorted_idx].detach().cpu().numpy()
@@ -242,7 +356,7 @@ def main():
             
             # Move files from tmp to target folder for this subgrid
             target_folder = (
-                f"plots/5.625deg/z500/Train (2017), test (2018_1_7)/ExactGP_full(2500epochs)/"
+                f"plots/5.625deg/z500/Train (2017_12), test (2018_1_7)/ExactGP_full(2500epochs,latlon)/"
                 f"lat_{lat_bound[i]}-{lat_bound[i+1]}_lon_{lon_bound[j]}-{lon_bound[j+1]}"
             )
             os.makedirs(target_folder, exist_ok=True)
@@ -267,7 +381,7 @@ def main():
     plot_relative_err(lat_full, lon_full, full_relative_error_grid)
     plot_rmse(lat_full, lon_full, full_rmse_error_grid)
     
-    target_folder_final = "plots/5.625deg/z500/Train (2017), test (2018_1_7)/ExactGP_full(2500epochs)/final"
+    target_folder_final = "plots/5.625deg/z500/Train (2017_12), test (2018_1_7)/ExactGP_full(2500epochs,latlon)/final"
     os.makedirs(target_folder_final, exist_ok=True)
     tmp_folder = "tmp"
     for filename in os.listdir(tmp_folder):

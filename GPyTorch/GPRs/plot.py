@@ -9,15 +9,19 @@ def plot_coords_dist(X_train, show=False):
     """Plots showing the distribution of coordinates from random sampling
        X_train should be numpy array."""
     
-    rand_coords = X_train[:,:3]
-    rand_time = X_train[:,3]
+    # rand_coords = X_train[:,:3]
+    # rand_time = X_train[:,3]
 
-    latlon = cartesian_to_latlon(rand_coords)
-    lat = latlon[:, 0]
-    lon = latlon[:, 1]
+    rand_time = X_train[:,2]
 
-    nlat = len(set(lat))
-    nlon = len(set(lon))
+    # latlon = cartesian_to_latlon(rand_coords)
+    # lat = latlon[:, 0]
+    # lon = latlon[:, 1]
+    lat = X_train[:, 0]
+    lon = X_train[:, 1]
+
+    nlat = len(np.unique(np.round(lat, 6)))
+    nlon = len(np.unique(np.round(lon, 6)))
 
     fig, axs = plt.subplots(ncols=2, figsize=(16, 6))
     # Left plot: Histogram of time coordinates
@@ -61,7 +65,7 @@ def plot_modelparams(params, wrmse, spatial, time, show=False):
     axs[0, 0].legend()
     axs[0, 0].text(
         0.6215, 0.65, 
-        f"1 day forecast\nTrain on 2017\nTest on 1-7/1/2018\nSubsampling: Rand",
+        f"Train on 2017-12\nTest on 1-7/1/2018\nSubsampling: Rand",
         transform=axs[0, 0].transAxes,  
         fontsize=10,
         bbox=dict(facecolor='white', alpha=0.8, boxstyle='round')
@@ -72,7 +76,7 @@ def plot_modelparams(params, wrmse, spatial, time, show=False):
     ax_rmse.tick_params(axis='y', labelcolor='tab:orange')
 
     # Right: Mean and Noise
-    #axs[0, 1].plot(epochs_range, df["mean"], color='tab:blue', label="Mean")
+    axs[0, 1].plot(epochs_range, df["mean"], color='tab:blue', label="Mean")
     axs[0, 1].set_title("GP Mean and Noise")
     axs[0, 1].set_xlabel("Epoch")
     axs[0, 1].set_ylabel("Mean", color='tab:blue')
@@ -86,7 +90,7 @@ def plot_modelparams(params, wrmse, spatial, time, show=False):
     # Left: Spatial lengthscales
     axs[1, 0].plot(epochs_range, df["spatial_1_lengthscale"], label=f'Spatial 1 Length Scale ({spatial[0]})', color='tab:blue')
     axs[1, 0].plot(epochs_range, df["spatial_2_lengthscale"], label=f'Spatial 2 Length Scale ({spatial[1]})', color='tab:orange')
-    axs[1, 0].plot(epochs_range, df["spatial_3_lengthscale"], label=f'Spatial 3 Length Scale ({spatial[2]})' , color='tab:red')
+    axs[1, 0].plot(epochs_range, df["spatial_3_lengthscale"], label=f'Spatial 3 Length Scale ({spatial[2]})', color='tab:red')
     axs[1, 0].set_title("Spatial Lengthscales")
     axs[1, 0].set_xlabel("Epoch")
     axs[1, 0].set_ylabel("Lengthscale")
@@ -102,8 +106,8 @@ def plot_modelparams(params, wrmse, spatial, time, show=False):
     # --- Row 3 ---
     # Left: Temporal lengthscales
     axs[2, 0].plot(epochs_range, df["time_period_1"], label=f'Period Length ({time[0]/24:.2f} days)', color='tab:blue')
-    #axs[2, 0].plot(epochs_range, df["time_period_2"], label=f'Period Length ({time[1]/24:.2f} days)', color='tab:red')
-    #axs[2, 0].plot(epochs_range, df["time_period_3"], label=f'Period Length ({time[2]/24:.2f} days)', color='tab:orange')
+    axs[2, 0].plot(epochs_range, df["time_period_2"], label=f'Period Length ({time[1]/24:.2f} days)', color='tab:red')
+    axs[2, 0].plot(epochs_range, df["time_period_3"], label=f'Period Length ({time[2]/24:.2f} days)', color='tab:orange')
     axs[2, 0].set_title("Temporal Period Lengths")
     axs[2, 0].set_xlabel("Epoch")
     axs[2, 0].set_ylabel("Lengthscale")
@@ -111,8 +115,8 @@ def plot_modelparams(params, wrmse, spatial, time, show=False):
 
     # Right: Temporal periods
     axs[2, 1].plot(epochs_range, df["time_lengthscale_1"], label=f'Period Length ({time[0]/24:.2f} days)', color='tab:blue')
-    #axs[2, 1].plot(epochs_range, df["time_lengthscale_2"], label=f'Period Length ({time[1]/24:.2f} days)', color='tab:red')
-    #axs[2, 1].plot(epochs_range, df["time_lengthscale_3"], label=f'Period Length ({time[2]/24:.2f} days)', color='tab:orange')
+    axs[2, 1].plot(epochs_range, df["time_lengthscale_2"], label=f'Period Length ({time[1]/24:.2f} days)', color='tab:red')
+    axs[2, 1].plot(epochs_range, df["time_lengthscale_3"], label=f'Period Length ({time[2]/24:.2f} days)', color='tab:orange')
     axs[2, 1].plot(epochs_range, df["time_matern_lengthscale"], label='Matern Length Scale', color='tab:green')
     axs[2, 1].set_title("Temporal Kernel Lengthscale")
     axs[2, 1].set_xlabel("Epoch")
